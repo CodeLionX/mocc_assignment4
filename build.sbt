@@ -9,9 +9,9 @@ version := "0.0.1"
 
 organization := "com.github.codelionx"
 
-ThisBuild / scalaVersion := "2.12.7"
+ThisBuild / scalaVersion := "2.11.12"
 
-val flinkVersion = "1.7.1"
+val flinkVersion = "1.6.2"
 
 val flinkDependencies = Seq(
   "org.apache.flink" %% "flink-scala" % flinkVersion % "provided",
@@ -22,7 +22,7 @@ lazy val root = (project in file(".")).
     libraryDependencies ++= flinkDependencies
   )
 
-assembly / mainClass := Some("com.github.codelionx.Job")
+assembly / mainClass := Some("com.github.codelionx.CellCluster")
 
 // make run command include the provided dependencies
 Compile / run  := Defaults.runTask(Compile / fullClasspath,
