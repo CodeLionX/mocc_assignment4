@@ -22,6 +22,7 @@ import org.apache.flink.api.java.functions.FunctionAnnotation.ForwardedFields
 import org.apache.flink.api.java.utils.ParameterTool
 import org.apache.flink.api.scala._
 import org.apache.flink.configuration.Configuration
+import org.apache.flink.core.fs.FileSystem
 
 import scala.collection.JavaConverters._
 
@@ -76,13 +77,46 @@ object CellCluster {
     // checking input parameters
     val params: ParameterTool = ParameterTool.fromArgs(args)
 
+    val k: Int = try {
+      params.getInt("k")
+    } catch {
+      case e: Throwable =>
+        println(s"Could not parse argument k, because $e")
+        -1
+    }
+
+    val mnc: Seq[Int] = {
+      val mncString = params.get("mnc")
+      if(mncString == null) {
+        println("No mnv specified ... ignoring.")
+        Seq.empty
+      }
+      try {
+        mncString.split(",").map(_.toInt)
+      } catch {
+        case e: Throwable =>
+          println(s"Could not parse argument mnc, because $e")
+          Seq.empty
+      }
+    }
+
     // set up execution environment
     val env: ExecutionEnvironment = ExecutionEnvironment.getExecutionEnvironment
 
     // get input data:
-    // read the points and centroids from the provided paths or fall back to default data
-    val points: DataSet[Point] = getPointDataSet(params, env)
-    val centroids: DataSet[Centroid] = getCentroidDataSet(params, env)
+    val cellData: DataSet[MobileCellData] = readCellData(params, env)
+
+    val centroids: DataSet[Centroid] = {
+      val data = cellData.filter(_.radio.equals("LTE"))
+      if(k <= 0) data
+      else       data.first(k)
+    }.map( mobileCell => Centroid(mobileCell.cell, mobileCell.lon, mobileCell.lat) )
+
+    val points: DataSet[Point] = {
+      val data = cellData.filter(_.radio.matches("UMTS|GSM"))
+      if(mnc.isEmpty) data
+      else            data.filter(cell => mnc.contains(cell.net))
+    }.map( mobileCell => Point(mobileCell.lon, mobileCell.lat))
 
     val finalCentroids = centroids.iterate(params.getInt("iterations", 10)) { currentCentroids =>
       val newCentroids = points
@@ -100,7 +134,8 @@ object CellCluster {
     if (params.has("output")) {
       clusteredPoints
         .map( tuple => (tuple._1, tuple._2.x, tuple._2.y) )
-        .writeAsCsv(params.get("output"))
+        .writeAsCsv(params.get("output"), writeMode = FileSystem.WriteMode.OVERWRITE)
+        .setParallelism(1)
       env.execute("Scala KMeans Example")
     } else {
       println("Printing result to stdout. Use --output to specify output path.")
@@ -112,6 +147,33 @@ object CellCluster {
   // *************************************************************************
   //     UTIL FUNCTIONS
   // *************************************************************************
+
+  def readCellData(params: ParameterTool, env: ExecutionEnvironment): DataSet[MobileCellData] = {
+    if(params.has("input")) {
+      val cellDataTuple = env.readCsvFile[Tuple14[String, String, String, String, String, String, String, String, String, String, String, String, String, String]](params.get("input"), ignoreFirstLine = true)
+      cellDataTuple.map( tuple => {
+        try {
+          MobileCellData(
+            radio = tuple._1,
+            cell = tuple._5.toInt,
+            net = tuple._3.toInt,
+            lon = tuple._7.toDouble,
+            lat = tuple._8.toDouble
+          )
+        } catch {
+          case e: NumberFormatException =>
+            println(
+              s"""Could not parse $tuple
+                 |Reason:
+                 |$e
+               """.stripMargin)
+            throw e
+        }
+      })
+    } else {
+      throw new RuntimeException("No input file was specified")
+    }
+  }
 
   def getCentroidDataSet(params: ParameterTool, env: ExecutionEnvironment): DataSet[Centroid] = {
     if (params.has("centroids")) {
@@ -147,6 +209,8 @@ object CellCluster {
   // *************************************************************************
   //     DATA TYPES
   // *************************************************************************
+
+  case class MobileCellData(radio: String, cell: Int, net: Int, lon: Double, lat: Double)
 
   /**
     * Common trait for operations supported by both points and centroids
