@@ -90,13 +90,14 @@ object CellCluster {
       if(mncString == null) {
         println("No mnv specified ... ignoring.")
         Seq.empty
-      }
-      try {
-        mncString.split(",").map(_.toInt)
-      } catch {
-        case e: Throwable =>
-          println(s"Could not parse argument mnc, because $e")
-          Seq.empty
+      } else {
+        try {
+          mncString.split(",").map(_.toInt)
+        } catch {
+          case e: Throwable =>
+            println(s"Could not parse argument mnc, because $e")
+            Seq.empty
+        }
       }
     }
 
