@@ -1,0 +1,30 @@
+*WordCount*
+
+_Synchronization_
+
+In our `WordCount` program, the operators `keyBy` and `sum`, as well as writing our outpUt using `writeAsCsv` require a redistributing stream as opposed to a one-to-one stream.
+These are the steps in which our workers synchronize and communicate their respective (intermediary) results.
+Since `WordCount` defines a streaming job, `keyBy` does not constitute a synchronization barrier but rather a non-blocking shuffle of the incoming events.
+Which worker receives which events depends on the event's key.
+
+_Bound by Memory, CPU, Network, Disk I/O_
+
+`WordCount` is likely predominantly bound by disk I/O performance since the actual computational load is comparably small for this task.
+
+_Could you improve the data partitioning of your data to yield better run-time?_
+
+*K-Means*
+
+_Synchronisation_
+
+In the `k-means` program, the operator `groupBy` in line 126 instigates redistributing streams within the data flow.
+`withBroadcastSet` results in communication of all centroids to all workers.
+Also the end of each iteration synchronizes the data flow before executing the next iteration (superstep).
+Finally writing the program output using `writeAsCsv` is set to run in a single-thread using the `setParallelism(1)` command, therefor resulting in a synchronization of the data flow.
+
+_Bound by Memory, CPU, Network, Disk I/O_
+
+Running `k-means` in small cluster or especially on a single node, the program is CPU-bound.
+When scaling to a larger cluster, network latency and throughput increasingly affect the runtime.
+
+_Could you improve the data partitioning of your data to yield better run-time?_
